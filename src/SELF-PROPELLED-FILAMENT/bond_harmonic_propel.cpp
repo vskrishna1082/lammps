@@ -94,17 +94,19 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
 
     // apply force to each of 2 atoms
     // reversal along tangent - default to 0 if no reversal vector
-    int reversal = (reversal_index != -1) ? *atom->ivector[reversal_index] : 0;
+    int* reversal = (reversal_index != -1) ? atom->ivector[reversal_index] : nullptr;
     if (newton_bond || i1 < nlocal) {
-      f[i1][0] += delx * (fbond + !reversal*fpropel);
-      f[i1][1] += dely * (fbond + !reversal*fpropel);
-      f[i1][2] += delz * (fbond + !reversal*fpropel);
+      int rev = (reversal) ? reversal[i1] : 0;
+      f[i1][0] += delx * (fbond + !rev*fpropel);
+      f[i1][1] += dely * (fbond + !rev*fpropel);
+      f[i1][2] += delz * (fbond + !rev*fpropel);
     }
 
     if (newton_bond || i2 < nlocal) {
-      f[i2][0] -= delx * (fbond + reversal*fpropel);
-      f[i2][1] -= dely * (fbond + reversal*fpropel);
-      f[i2][2] -= delz * (fbond + reversal*fpropel);
+      int rev = (reversal) ? reversal[i2] : 0;
+      f[i2][0] -= delx * (fbond + rev*fpropel);
+      f[i2][1] -= dely * (fbond + rev*fpropel);
+      f[i2][2] -= delz * (fbond + rev*fpropel);
     }
 
     if (evflag) ev_tally(i1, i2, nlocal, newton_bond, ebond, fbond, delx, dely, delz);

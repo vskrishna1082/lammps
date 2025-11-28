@@ -82,7 +82,7 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
   const auto * _noalias const x = (dbl3_t *) atom->x[0];
   int reversal_flag, reversal_type;
   const auto reversal_index = atom->find_custom("reversal", reversal_flag, reversal_type);
-  const auto reversal = (reversal_index != -1) ? *atom->ivector[reversal_index] : 0;
+  auto * _noalias const reversal = (reversal_index != -1) ? atom->ivector[reversal_index] : nullptr;
   auto * _noalias const f = (dbl3_t *) thr->get_f()[0];
   const int3_t * _noalias const bondlist = (int3_t *) neighbor->bondlist[0];
   const int nlocal = atom->nlocal;
@@ -118,15 +118,17 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
     // apply force to each of 2 atoms
 
     if (NEWTON_BOND || i1 < nlocal) {
-      f[i1].x += delx * (fbond + !reversal*fpropel);
-      f[i1].y += dely * (fbond + !reversal*fpropel);
-      f[i1].z += delz * (fbond + !reversal*fpropel);
+      const int rev = (reversal) ? reversal[i1] : 0;
+      f[i1].x += delx * (fbond + !rev*fpropel);
+      f[i1].y += dely * (fbond + !rev*fpropel);
+      f[i1].z += delz * (fbond + !rev*fpropel);
     }
 
     if (NEWTON_BOND || i2 < nlocal) {
-      f[i2].x -= delx * (fbond + reversal*fpropel);
-      f[i2].y -= dely * (fbond + reversal*fpropel);
-      f[i2].z -= delz * (fbond + reversal*fpropel);
+      const int rev = (reversal) ? reversal[i2] : 0;
+      f[i2].x -= delx * (fbond + rev*fpropel);
+      f[i2].y -= dely * (fbond + rev*fpropel);
+      f[i2].z -= delz * (fbond + rev*fpropel);
     }
 
     if (EVFLAG) ev_tally_thr(this, i1, i2, nlocal, NEWTON_BOND, ebond, fbond, delx, dely, delz, thr);
