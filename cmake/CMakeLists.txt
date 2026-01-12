@@ -586,6 +586,10 @@ if(PKG_ML-QUIP OR PKG_ML-POD OR PKG_ELECTRODE OR PKG_RHEO OR BUILD_TOOLS OR PKG_
   endif()
 endif()
 
+if(PKG_SELF-PROPELLED-FILAMENT)
+  include_directories(${LAMMPS_LIB_SOURCE_DIR}/random123/include)
+endif()
+
 find_program(GZIP_EXECUTABLE gzip)
 find_package_handle_standard_args(GZIP REQUIRED_VARS GZIP_EXECUTABLE)
 option(WITH_GZIP "Enable GZIP support" ${GZIP_FOUND})
