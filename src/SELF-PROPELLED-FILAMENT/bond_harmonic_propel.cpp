@@ -59,11 +59,17 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
   int reversal_flag;
   int reversal_type;
   int reversal_index = atom->find_custom("reversal", reversal_flag, reversal_type);
+  int* reversal = (reversal_index != -1) ? atom->ivector[reversal_index] : nullptr;
   double **f = atom->f;
   int **bondlist = neighbor->bondlist;
   int nbondlist = neighbor->nbondlist;
   int nlocal = atom->nlocal;
   int newton_bond = force->newton_bond;
+  // track angles
+  int theta_flag, theta_type;
+  int theta_index = atom->find_custom("theta", theta_flag, theta_type);
+  auto* theta = (theta_index != -1) ? atom->dvector[theta_index] : nullptr;
+
 
   for (n = 0; n < nbondlist; n++) {
     i1 = bondlist[n][0];
@@ -78,6 +84,13 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
     r = sqrt(rsq);
     dr = r - r0[type];
     rk = k[type] * dr;
+
+    // update tan theta using exponential moving average
+    if (theta) {
+      double theta_new = std::atan2(dely, delx);
+      theta[i1] = theta_new;
+      theta[i2] = theta_new;
+    }
 
     // force & energy
 
@@ -94,16 +107,15 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
 
     // apply force to each of 2 atoms
     // reversal along tangent - default to 0 if no reversal vector
-    int* reversal = (reversal_index != -1) ? atom->ivector[reversal_index] : nullptr;
     if (newton_bond || i1 < nlocal) {
-      int rev = (reversal) ? reversal[i1] : 0;
+      const int rev = (reversal) ? reversal[i1] : 0;
       f[i1][0] += delx * (fbond + !rev*fpropel);
       f[i1][1] += dely * (fbond + !rev*fpropel);
       f[i1][2] += delz * (fbond + !rev*fpropel);
     }
 
     if (newton_bond || i2 < nlocal) {
-      int rev = (reversal) ? reversal[i2] : 0;
+      const int rev = (reversal) ? reversal[i2] : 0;
       f[i2][0] -= delx * (fbond + rev*fpropel);
       f[i2][1] -= dely * (fbond + rev*fpropel);
       f[i2][2] -= delz * (fbond + rev*fpropel);
@@ -134,7 +146,7 @@ void BondHarmonicPropel::allocate()
 
 void BondHarmonicPropel::coeff(int narg, char **arg)
 {
-  if (narg != 4) error->all(FLERR, "Incorrect args for bond coefficients" + utils::errorurl(21));
+  if (narg <= 3) error->all(FLERR, "Incorrect args for bond coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
   int ilo, ihi;
@@ -197,9 +209,9 @@ void BondHarmonicPropel::read_restart(FILE *fp)
    proc 0 writes to data file
 ------------------------------------------------------------------------- */
 
-void BondHarmonicPropel::write_data(FILE *fp)
+void BondHarmonicPropel::write_data(FILE *f)
 {
-  for (int i = 1; i <= atom->nbondtypes; i++) fprintf(fp, "%d %g %g %g\n", i, k[i], r0[i], fp[i]);
+  for (int i = 1; i <= atom->nbondtypes; i++) fprintf(f, "%d %g %g %g\n", i, k[i], r0[i], fp[i]);
 }
 
 /* ---------------------------------------------------------------------- */

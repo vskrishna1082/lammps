@@ -87,6 +87,10 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
   const int3_t * _noalias const bondlist = (int3_t *) neighbor->bondlist[0];
   const int nlocal = atom->nlocal;
   ebond = 0.0;
+  // track angles
+  int theta_flag, theta_type;
+  const auto theta_index = atom->find_custom("theta", theta_flag, theta_type);
+  auto * _noalias theta = (theta_index != -1) ? atom->dvector[theta_index] : nullptr;
 
   for (n = nfrom; n < nto; n++) {
     i1 = bondlist[n].a;
@@ -101,6 +105,13 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
     r = sqrt(rsq);
     dr = r - r0[type];
     rk = k[type] * dr;
+
+    // update tan theta using exponential moving average
+    if (theta) {
+      double theta_new = std::atan2(dely, delx);
+      theta[i1] = theta_new;
+      theta[i2] = theta_new;
+    }
 
     // force & energy
 
