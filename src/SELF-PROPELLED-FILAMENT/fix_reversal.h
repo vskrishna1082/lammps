@@ -27,6 +27,7 @@ class FixReversal : public Fix {
   double rate;
   RNG rng;
   RNG::ukey_type uk = {{43923764583}};
+  int tau_peratom_flag = 0;
 };
 }
 

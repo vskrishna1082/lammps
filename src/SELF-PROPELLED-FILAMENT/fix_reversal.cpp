@@ -16,10 +16,11 @@ FixReversal::FixReversal(LAMMPS *lmp, int narg, char **arg) : Fix(lmp, narg, arg
     error->all(FLERR, "Illegal Fix reversal ", nevery);
   }
 
-  int iarg = 5;
-  if (iarg <= narg) {
+  if (narg >= 6) {
     avg_runtime = utils::numeric(FLERR, arg[4], false, lmp);
     uk[0] = utils::numeric(FLERR, arg[5], false, lmp);
+    if (narg >= 7)
+      tau_peratom_flag = utils::inumeric(FLERR, arg[6], false, lmp); // overrides default tau
   } else  {
     error->all(FLERR, "Illegal Fix reversal command");
   }
@@ -58,22 +59,27 @@ void FixReversal::end_of_step()
   int reversal_flag;
   int reversal_type;
   int reversal_index = atom->find_custom("reversal", reversal_flag, reversal_type);
+  int taus_flag;
+  int taus_type;
+  int tau_index = atom->find_custom("tau", taus_flag, taus_type);
   // reversal vector needs to exist for fix to work
   if (reversal_index == -1) error->all(FLERR, "Fix reversal needs custom reversal variable");
 
   int* reversal = atom->ivector[reversal_index];
+  double* taus = atom->dvector[tau_index];
 
   // flip value of reversal for all atoms in group
   for (int i = 0; i < nlocal; i++)
   {
     if (mask[i] & groupbit) 
     { 
+      double rate_i = tau_peratom_flag ? update->dt / taus[i] : rate;
       RNG::ctr_type c = {{0}};
       c[0] = update->ntimestep;
       RNG::key_type k = uk;
       k[0] += mol[i];
       auto r = rng(c,k);
-      if (r123::u01<double>(r.v[0]) <= rate) {
+      if (r123::u01<double>(r.v[0]) <= rate_i) {
         reversal[i] = !reversal[i];
       }
     }
