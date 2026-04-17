@@ -22,7 +22,8 @@ class ComputePolarAlignment : public Compute {
 
  protected:
   int nmax, jgroupbit;
-  double cutsq;
+  double cutoff_user, cutsq, mycutneigh;
+  int cutflag;
   double strength;
   class NeighList *list;
   double *cvec;

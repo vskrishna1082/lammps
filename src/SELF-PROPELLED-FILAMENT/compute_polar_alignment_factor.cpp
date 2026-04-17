@@ -1,11 +1,13 @@
 #include "compute_polar_alignment_factor.h"
 
 #include "atom.h"
+#include "comm.h"
 #include "error.h"
 #include "force.h"
 #include "group.h"
 #include "memory.h"
 #include "neigh_list.h"
+#include "neigh_request.h"
 #include "neighbor.h"
 #include "pair.h"
 #include "update.h"
@@ -22,8 +24,8 @@ ComputePolarAlignment::ComputePolarAlignment(LAMMPS *lmp, int narg, char **arg) 
   jgroupbit = group->get_bitmask_by_id(FLERR, "all", "compute coord/atom");
 
   strength = utils::numeric(FLERR, arg[3], false, lmp);
-  double cutoff = utils::numeric(FLERR, arg[4], false, lmp);
-  cutsq = cutoff * cutoff;
+  cutoff_user = utils::numeric(FLERR, arg[4], false, lmp);
+  cutsq = cutoff_user * cutoff_user;
 
   peratom_flag = 1;
   size_peratom_cols = 0;
@@ -47,12 +49,30 @@ void ComputePolarAlignment::init()
 	error->all(FLERR, "Compute polar_alignment/atom requires a pair style be defined");
   }
   if (sqrt(cutsq) > force->pair->cutforce) {
-	error->all(FLERR, "Compute coord/atom cutoff is longer than pairwise cutoff");
+	error->warning(FLERR, "Compute coord/atom cutoff is longer than pairwise cutoff");
   }
 
-  // need an occasional full neighbor list
+  // Does the pairstyle neighbor list suffice?
+  double skin = neighbor->skin;
+  mycutneigh = cutoff_user + skin;
+  if (mycutneigh > force->pair->cutforce + skin) cutflag = 1;
 
-  neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
+  // Does the ghost cutoff suffice?
+  double cutghost;
+  if (force->pair)
+    cutghost = MAX(force->pair->cutforce+skin,comm->cutghostuser);
+  else
+    cutghost = comm->cutghostuser;
+  if (mycutneigh > cutghost)
+    error->all(FLERR,"Compute cluster/atom cutoff exceeds ghost atom range - "
+                "use comm_modify cutoff command");
+
+  // need an occasional full neighbor list
+  // full required so that pair of atoms on 2 procs both set their clusterID
+
+  auto req = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
+  if (cutflag) req->set_cutoff(mycutneigh);
+
 }
 
 /* ---------------------------------------------------------------------- */
@@ -88,12 +108,13 @@ void ComputePolarAlignment::compute_peratom()
   // compute polar alignment factor for each atom in group
   // dot product of atom orientation and local polar order P
   // P = [sum(cos(n.theta),sum(sin(n.theta)) for n in atom.neighbor]
-  // factor = strength*cos(atom.theta)*P[0] + sin(atom.theta)*P[1]
-
+  // factor = N*strength*cos(atom.theta)*P[0] + sin(atom.theta)*P[1]
+  // N -> Normalization constant = bead_radius/(2*pi*cutsq)
   double **x = atom->x;
   int *type = atom->type;
   int *mask = atom->mask;
   int *mol = atom->molecule;
+  const double N = force->pair->cutforce / (2.0 * M_PI * cutsq);
 
   // get theta vector
   int theta_flag, theta_type;
@@ -133,7 +154,7 @@ void ComputePolarAlignment::compute_peratom()
 		  }
 		}
 	  }
-	  double factor = strength * (cos(theta[i]) * P_x + sin(theta[i]) * P_y);
+	  double factor = N * strength * (cos(theta[i]) * P_x + sin(theta[i]) * P_y);
 	  cvec[i] = factor;
 	} else {
 	  cvec[i] = 0.0;
