@@ -106,13 +106,6 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
     dr = r - r0[type];
     rk = k[type] * dr;
 
-    // update tan theta using exponential moving average
-    if (theta) {
-      double theta_new = std::atan2(dely, delx);
-      theta[i1] = theta_new;
-      theta[i2] = theta_new;
-    }
-
     // force & energy
 
     if (r > 0.0) {
@@ -127,19 +120,28 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
     if (EFLAG) ebond = rk * dr;
 
     // apply force to each of 2 atoms
+    // reversal along tangent - default to 0 if no reversal vector
+    const int rev1 = (reversal) ? reversal[i1] : 0;
+    const int rev2 = (reversal) ? reversal[i2] : 0;
+    const int dir = 1 - 2 * rev1; // 1 if rev1=0, -1 if rev1=1
 
     if (NEWTON_BOND || i1 < nlocal) {
-      const int rev = (reversal) ? reversal[i1] : 0;
-      f[i1].x += delx * (fbond + !rev*fpropel);
-      f[i1].y += dely * (fbond + !rev*fpropel);
-      f[i1].z += delz * (fbond + !rev*fpropel);
+      f[i1].x += delx * (fbond + !rev1*fpropel);
+      f[i1].y += dely * (fbond + !rev1*fpropel);
+      f[i1].z += delz * (fbond + !rev1*fpropel);
     }
 
     if (NEWTON_BOND || i2 < nlocal) {
-      const int rev = (reversal) ? reversal[i2] : 0;
-      f[i2].x -= delx * (fbond + rev*fpropel);
-      f[i2].y -= dely * (fbond + rev*fpropel);
-      f[i2].z -= delz * (fbond + rev*fpropel);
+      f[i2].x -= delx * (fbond + rev2*fpropel);
+      f[i2].y -= dely * (fbond + rev2*fpropel);
+      f[i2].z -= delz * (fbond + rev2*fpropel);
+    }
+
+    // update tan theta using exponential moving average
+    if (theta) {
+      double theta_new = std::atan2(dir*dely, dir*delx);
+      theta[i1] = theta_new;
+      theta[i2] = theta_new;
     }
 
     if (EVFLAG) ev_tally_thr(this, i1, i2, nlocal, NEWTON_BOND, ebond, fbond, delx, dely, delz, thr);
