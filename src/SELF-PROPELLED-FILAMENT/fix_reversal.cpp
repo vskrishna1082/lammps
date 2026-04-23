@@ -82,6 +82,7 @@ void FixReversal::init()
   int* mol = atom->molecule;
   int nlocal = atom->nlocal;
   // TO-DO: This whole business isn't thread safe, and has to be reritten!
+  molid_idx.clear();
   int nlocalmol = 0;
   for (int i = 0; i < nlocal; i++) {
     if (mol[i] > 0) {
