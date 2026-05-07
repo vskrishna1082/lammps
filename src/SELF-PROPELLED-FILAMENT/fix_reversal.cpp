@@ -81,23 +81,26 @@ void FixReversal::init()
   // Assumes number of molecules does not change
   int* mol = atom->molecule;
   int nlocal = atom->nlocal;
-  // TO-DO: This whole business isn't thread safe, and has to be reritten!
-  molid_idx.clear();
-  int nlocalmol = 0;
-  for (int i = 0; i < nlocal; i++) {
-    if (mol[i] > 0) {
-      if (molid_idx.find(mol[i]) == molid_idx.end()) {
-        molid_idx[mol[i]] = nlocalmol;
-        nlocalmol++;
-      }
-    }
-  }
-  std::cout << "NLOCALMOL is " << nlocalmol << std::endl;
-  MPI_Allreduce(&nlocalmol, &nmol, 1, MPI_INT, MPI_SUM, world);
-  std::cout << "Fix Reversal: Found " << nmol << " Molecules.\n";
-  std::cout << "Fix Reversal: Found " << molid_idx.size() << " Molecules.\n";
+
+  // Find the max. molecule id
+  int maxlocalmolid = -1;
+  for (int i = 0; i < nlocal; i++)
+    if (mol[i] > maxlocalmolid) maxlocalmolid = mol[i];
+  MPI_Allreduce(&maxlocalmolid, &nmol, 1, MPI_LMP_TAGINT, MPI_MAX, world);
+  nmol += 1;
+
+  if (nmol > MAXSMALLINT)
+    error->all(FLERR, Error::NOLASTLINE, "Molecule ID too high for reversals!");
 
   mol_reversed.resize(nmol, false);
+  mol_size.resize(nmol, false);
+  std::vector<int> local_mol_size(nmol, 0);
+
+  for (int i = 0; i < nlocal; i++)
+    local_mol_size[mol[i]] += 1;
+
+  for (int i = 0; i < nmol; i++)
+    MPI_Allreduce(&local_mol_size[i], &mol_size[i], 1, MPI_LMP_TAGINT, MPI_SUM, world);
 }
 
 void FixReversal::end_of_step()
@@ -135,20 +138,19 @@ void FixReversal::reverse_atomic()
       RNG::key_type k = uk;
       k[0] += i;
       auto r = rng(c,k);
-      // TODO: Correctly calculate the size of each molecule
-      if (r123::u01<double>(r.v[0]) <= rate_i / 50) {
-        one_mol_reversed[molid_idx[mol[i]]] = 1;
-      }
+      if (r123::u01<double>(r.v[0]) <= rate_i / mol_size[mol[i]])
+        one_mol_reversed[mol[i]] = 1;
     }
   }
-  for (int i = 0; i < nmol; i++) {
+
+  for (int i = 0; i < nmol; i++)
     MPI_Allreduce(&one_mol_reversed[i], &mol_reversed[i], 1, MPI_INT, MPI_LOR, world);
-  }
+
   for (int i = 0; i < nlocal; i++)
   {
     if (mask[i] & groupbit)
     {
-      if (mol_reversed[molid_idx[mol[i]]]) {
+      if (mol_reversed[mol[i]]) {
         reversal[i] = !reversal[i];
         if (alignment_factor_flag) {
           afs[i] = -afs[i];
