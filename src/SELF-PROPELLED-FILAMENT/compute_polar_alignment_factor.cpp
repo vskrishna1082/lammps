@@ -71,7 +71,7 @@ void ComputePolarAlignment::init()
   // full required so that pair of atoms on 2 procs both set their clusterID
 
   auto req = neighbor->add_request(this, NeighConst::REQ_FULL | NeighConst::REQ_OCCASIONAL);
-  if (cutflag) req->set_cutoff(mycutneigh);
+  if (cutflag) req->set_cutoff_fixed(mycutneigh);
 
 }
 
