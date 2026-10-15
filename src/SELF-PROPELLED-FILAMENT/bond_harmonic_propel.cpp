@@ -49,7 +49,7 @@ BondHarmonicPropel::~BondHarmonicPropel()
 void BondHarmonicPropel::compute(int eflag, int vflag)
 {
   int i1, i2, n, type;
-  double delx, dely, delz, ebond, fbond, fpropel;
+  double delx, dely, delz, ebond, fbond, fp1, fp2;
   double rsq, r, dr, rk;
 
   ebond = 0.0;
@@ -69,6 +69,9 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
   int theta_flag, theta_type;
   int theta_index = atom->find_custom("theta", theta_flag, theta_type);
   auto* theta = (theta_index != -1) ? atom->dvector[theta_index] : nullptr;
+  int force_flag, force_type;
+  int force_index = atom->find_custom(force_array.c_str(), force_flag, force_type);
+  auto* f_arr = (force_peratom_flag) ? atom->dvector[force_index] : nullptr;
 
 
   for (n = 0; n < nbondlist; n++) {
@@ -89,11 +92,13 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
 
     if (r > 0.0) {
       fbond = -2.0 * rk / r;
-      fpropel = fp[type] / r;
+      fp1 = (force_peratom_flag) ? f_arr[i1] / r : fp[type] / r;
+      fp2 = (force_peratom_flag) ? f_arr[i2] / r : fp[type] / r;
     }
     else {
       fbond = 0.0;
-      fpropel = 0.0;
+      fp1 = 0.0;
+      fp2 = 0.0;
     }
 
     if (eflag) ebond = rk * dr;
@@ -105,15 +110,15 @@ void BondHarmonicPropel::compute(int eflag, int vflag)
     const int dir = 1 - 2 * rev1; // 1 if rev1=0, -1 if rev1=1
 
     if (newton_bond || i1 < nlocal) {
-      f[i1][0] += delx * (fbond + !rev1*fpropel);
-      f[i1][1] += dely * (fbond + !rev1*fpropel);
-      f[i1][2] += delz * (fbond + !rev1*fpropel);
+      f[i1][0] += delx * (fbond + !rev1*fp1);
+      f[i1][1] += dely * (fbond + !rev1*fp1);
+      f[i1][2] += delz * (fbond + !rev1*fp1);
     }
 
     if (newton_bond || i2 < nlocal) {
-      f[i2][0] -= delx * (fbond + rev2*fpropel);
-      f[i2][1] -= dely * (fbond + rev2*fpropel);
-      f[i2][2] -= delz * (fbond + rev2*fpropel);
+      f[i2][0] -= delx * (fbond + rev2*fp2);
+      f[i2][1] -= dely * (fbond + rev2*fp2);
+      f[i2][2] -= delz * (fbond + rev2*fp2);
     }
 
     // update tan theta
@@ -151,14 +156,24 @@ void BondHarmonicPropel::coeff(int narg, char **arg)
   if (narg <= 3) error->all(FLERR, "Incorrect args for bond coefficients" + utils::errorurl(21));
   if (!allocated) allocate();
 
-  int ilo, ihi;
+  int ilo, ihi; // the bond types for which these parameters are defined
   utils::bounds(FLERR, arg[0], 1, atom->nbondtypes, ilo, ihi, error);
 
   double k_one = utils::numeric(FLERR, arg[1], false, lmp);
   double r0_one = utils::numeric(FLERR, arg[2], false, lmp);
-  double fp_one = utils::numeric(FLERR, arg[3], false, lmp);
+  double fp_one = 0;
+
+  if (utils::strmatch(arg[3], "^d_"))
+  { // third argument is an array
+    force_peratom_flag = true;
+    force_array =  std::string(&arg[3][2]);
+  }
+  else { // thrid argument is a number
+    fp_one = utils::numeric(FLERR, arg[3], false, lmp);
+  }
 
   int count = 0;
+  // set params for all bond types between ilo and ihi
   for (int i = ilo; i <= ihi; i++) {
     k[i] = k_one;
     r0[i] = r0_one;

@@ -40,6 +40,8 @@ class BondHarmonicPropel : public Bond {
 
  protected:
   double *k, *r0, *fp;
+  std::string force_array;
+  bool force_peratom_flag = false;
 
   void allocate();
 };

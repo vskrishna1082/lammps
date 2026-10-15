@@ -76,7 +76,7 @@ template <int EVFLAG, int EFLAG, int NEWTON_BOND>
 void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
 {
   int i1, i2, n, type;
-  double delx, dely, delz, ebond, fbond, fpropel;
+  double delx, dely, delz, ebond, fbond, fp1, fp2;
   double rsq, r, dr, rk;
 
   const auto * _noalias const x = (dbl3_t *) atom->x[0];
@@ -91,6 +91,10 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
   int theta_flag, theta_type;
   const auto theta_index = atom->find_custom("theta", theta_flag, theta_type);
   auto * _noalias theta = (theta_index != -1) ? atom->dvector[theta_index] : nullptr;
+  int force_flag, force_type;
+  const auto force_index = atom->find_custom(force_array.c_str(), force_flag, force_type);
+  auto* _noalias const f_arr = (force_peratom_flag) ? atom->dvector[force_index] : nullptr;
+
 
   for (n = nfrom; n < nto; n++) {
     i1 = bondlist[n].a;
@@ -108,13 +112,16 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
 
     // force & energy
 
+    // divide force by r because we multiply with delx and dely later
     if (r > 0.0) {
       fbond = -2.0 * rk / r;
-      fpropel = fp[type] / r;
+      fp1 = (force_peratom_flag) ? f_arr[i1] / r : fp[type] / r;
+      fp2 = (force_peratom_flag) ? f_arr[i2] / r : fp[type] / r;
     }
     else {
       fbond = 0.0;
-      fpropel = 0.0;
+      fp1 = 0.0;
+      fp2 = 0.0;
     }
 
     if (EFLAG) ebond = rk * dr;
@@ -126,15 +133,15 @@ void BondHarmonicPropelOMP::eval(int nfrom, int nto, ThrData * const thr)
     const int dir = 1 - 2 * rev1; // 1 if rev1=0, -1 if rev1=1
 
     if (NEWTON_BOND || i1 < nlocal) {
-      f[i1].x += delx * (fbond + !rev1*fpropel);
-      f[i1].y += dely * (fbond + !rev1*fpropel);
-      f[i1].z += delz * (fbond + !rev1*fpropel);
+      f[i1].x += delx * (fbond + !rev1*fp1);
+      f[i1].y += dely * (fbond + !rev1*fp1);
+      f[i1].z += delz * (fbond + !rev1*fp1);
     }
 
     if (NEWTON_BOND || i2 < nlocal) {
-      f[i2].x -= delx * (fbond + rev2*fpropel);
-      f[i2].y -= dely * (fbond + rev2*fpropel);
-      f[i2].z -= delz * (fbond + rev2*fpropel);
+      f[i2].x -= delx * (fbond + rev2*fp2);
+      f[i2].y -= dely * (fbond + rev2*fp2);
+      f[i2].z -= delz * (fbond + rev2*fp2);
     }
 
     // update tan theta using exponential moving average
