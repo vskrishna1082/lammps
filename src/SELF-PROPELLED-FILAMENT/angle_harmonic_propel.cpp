@@ -78,6 +78,10 @@ void AngleHarmonicPropel::compute(int eflag, int vflag)
   int theta_index = atom->find_custom("theta", theta_flag, theta_type);
   auto* theta = (theta_index != -1) ? atom->dvector[theta_index] : nullptr;
 
+  int force_flag, force_type;
+  int force_index = atom->find_custom(force_array.c_str(), force_flag, force_type);
+  auto* f_arr = (force_peratom_flag) ? atom->dvector[force_index] : nullptr;
+
   for (n = 0; n < nanglelist; n++) {
     i1 = anglelist[n][0];
     i2 = anglelist[n][1];
@@ -168,7 +172,7 @@ void AngleHarmonicPropel::compute(int eflag, int vflag)
     const int rev = (reversal) ? reversal[i2] : 0;
     const int dir = 1 - 2 * rev; // 1 if rev1=0, -1 if rev1=1
     
-    double fp = fpropel[type] / r;
+    double fp = (force_peratom_flag) ? f_arr[i1] / r :fpropel[type] / r;
 
     if (newton_bond || i2 < nlocal) {
       f[i2][0] += dir * fp * delx;
@@ -255,6 +259,7 @@ double AngleHarmonicPropel::equilibrium_angle(int i)
 
 /* ----------------------------------------------------------------------
    proc 0 writes out coeffs to restart file
+   NOTE: cannot write peratom force array
 ------------------------------------------------------------------------- */
 
 void AngleHarmonicPropel::write_restart(FILE *fp)
@@ -266,6 +271,7 @@ void AngleHarmonicPropel::write_restart(FILE *fp)
 
 /* ----------------------------------------------------------------------
    proc 0 reads coeffs from restart file, bcasts them
+   NOTE: cannot read peratom force array
 ------------------------------------------------------------------------- */
 
 void AngleHarmonicPropel::read_restart(FILE *fp)
@@ -286,6 +292,7 @@ void AngleHarmonicPropel::read_restart(FILE *fp)
 
 /* ----------------------------------------------------------------------
    proc 0 writes to data file
+   NOTE: cannot write peratom force array
 ------------------------------------------------------------------------- */
 
 void AngleHarmonicPropel::write_data(FILE *fp)
