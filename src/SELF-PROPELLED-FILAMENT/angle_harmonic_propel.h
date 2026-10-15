@@ -39,8 +39,8 @@ class AngleHarmonicPropel : public Angle {
 
  protected:
   double *k, *theta0, *fpropel;
-  std::string force_array;
-  bool force_peratom_flag = false;
+  std::string force_array, nbond_array;
+  bool force_peratom_flag = false, end_correction = false;
 
   virtual void allocate();
 };

@@ -82,6 +82,10 @@ void AngleHarmonicPropel::compute(int eflag, int vflag)
   int force_index = atom->find_custom(force_array.c_str(), force_flag, force_type);
   auto* f_arr = (force_peratom_flag) ? atom->dvector[force_index] : nullptr;
 
+  int nbond_flag, nbond_type;
+  int nbond_index = atom->find_custom(nbond_array.c_str(), nbond_flag, nbond_type);
+  auto* nbond_arr = (end_correction) ? atom->ivector[nbond_index] : nullptr;
+
   for (n = 0; n < nanglelist; n++) {
     i1 = anglelist[n][0];
     i2 = anglelist[n][1];
@@ -172,7 +176,7 @@ void AngleHarmonicPropel::compute(int eflag, int vflag)
     const int rev = (reversal) ? reversal[i2] : 0;
     const int dir = 1 - 2 * rev; // 1 if rev1=0, -1 if rev1=1
     
-    double fp = (force_peratom_flag) ? f_arr[i1] / r :fpropel[type] / r;
+    double fp = (force_peratom_flag) ? f_arr[i2] / r : fpropel[type] / r;
 
     if (newton_bond || i2 < nlocal) {
       f[i2][0] += dir * fp * delx;
@@ -180,14 +184,47 @@ void AngleHarmonicPropel::compute(int eflag, int vflag)
       f[i2][2] += dir * fp * delz;
     }
 
-    // update tan theta. We set the theta for all beads. While
-    // this may result in some beads having theta of neighbors
-    // it's better than not setting theta for the end beads.
+    // update tan theta
     if (theta) {
       double theta_new = std::atan2(dir*dely, dir*delx);
-      theta[i1] = theta_new;
       theta[i2] = theta_new;
-      theta[i3] = theta_new;
+      // if end_correction is not set update all atoms in
+      // angle so as not to exclude the head/tail atoms.
+      if (!end_correction) {
+        theta[i1] = theta_new;
+        theta[i3] = theta_new;
+      }
+    }
+
+    // end correction: There are N atoms per filament and only N-2 angles. If the first or last atom
+    // in the angle list has only one bond, it is a head/tail atom; we handle them as special cases.
+    if (end_correction) {
+      // head bond
+      if (nbond_arr[i1] == 1) {
+        double fp_head = (force_peratom_flag) ? f_arr[i1] / r1 : fpropel[type] / r1;
+        if (newton_bond || i1 < nlocal) {
+          f[i1][0] += dir * fp_head * delx1;
+          f[i1][1] += dir * fp_head * dely1;
+          f[i1][2] += dir * fp_head * delz1;
+        }
+        if (theta) {
+          double theta_new = std::atan2(dir*dely1, dir*delx1);
+          theta[i1] = theta_new;
+        }
+      }
+      // tail atom
+      if (nbond_arr[i3] == 1) {
+        double fp_tail = (force_peratom_flag) ? f_arr[i3] / r2 : fpropel[type] / r2;
+        if (newton_bond || i3 < nlocal) {
+          f[i3][0] -= dir * fp_tail * delx2;
+          f[i3][1] -= dir * fp_tail * dely2;
+          f[i3][2] -= dir * fp_tail * delz2;
+        }
+        if (theta) {
+          double theta_new = std::atan2(-dir*dely2, -dir*delx2);
+          theta[i3] = theta_new;
+        }
+      }
     }
 
     if (evflag)
@@ -234,6 +271,16 @@ void AngleHarmonicPropel::coeff(int narg, char **arg)
   }
   else { // thrid argument is a number
     fp_one = utils::numeric(FLERR, arg[3], false, lmp);
+  }
+
+  int iarg = 4;
+  while (iarg < narg) {
+    if (strcmp(arg[iarg], "end_correction") == 0) {
+      end_correction = true;
+      if (utils::strmatch(arg[iarg+1], "^i_")) nbond_array =  std::string(&arg[iarg+1][2]);
+      else error->all(FLERR, "Expected nbond array for end correction" + utils::errorurl(21));
+    }
+    iarg++;
   }
 
   // convert theta0 from degrees to radians
